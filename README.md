@@ -150,6 +150,7 @@ HermesHandler aborts the signal once a request lifecycle completes.
 * `timeoutMs?: number`
 * `onUnknown?: (msg, ctx) => HermesResponse`
 * `onError?: (err, msg, ctx) => HermesResponse`
+* `logger?: HermesLogger | null`
 
 ---
 
