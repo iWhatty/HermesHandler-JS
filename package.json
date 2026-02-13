@@ -46,5 +46,16 @@
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"
   },
-  "keywords": []
+  "keywords": [
+    "javascript",
+    "browser-extension",
+    "webextension",
+    "message-router",
+    "event-driven",
+    "llm",
+    "agent",
+    "runtime",
+    "router",
+    "abortsignal"
+  ]
 }
