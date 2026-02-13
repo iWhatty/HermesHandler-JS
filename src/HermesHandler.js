@@ -53,6 +53,15 @@
  */
 
 
+/**
+ * @typedef {Object} HermesLogger
+ * @property {(message?: any, ...optionalParams: any[]) => void} [debug]
+ * @property {(message?: any, ...optionalParams: any[]) => void} [info]
+ * @property {(message?: any, ...optionalParams: any[]) => void} [warn]
+ * @property {(message?: any, ...optionalParams: any[]) => void} [error]
+ */
+
+
 
 /* ------------------------------------------------------------
  * Internal helpers
@@ -156,12 +165,14 @@ export class HermesHandler {
      * @param {number} [options.timeoutMs=5000]  max time a handler can take before auto-fail
      * @param {(msg: any, ctx: any) => any} [options.onUnknown]  override unknown-type response
      * @param {(err: any, msg: any, ctx: any) => any} [options.onError] override error response
+     * @param {HermesLogger|null} [options.logger=console]  set to null to silence logs
      */
     constructor(initialHandlers = {}, options = {}) {
         const {
             timeoutMs = 5000,
             onUnknown = (msg) => ({ ok: false, error: `Unknown msg.type: ${msg?.type}` }),
-            onError = (err) => ({ ok: false, error: toErrorString(err) })
+            onError = (err) => ({ ok: false, error: toErrorString(err) }),
+            logger = console
         } = options;
 
         /** @type {Map<string, HermesHandlerFn>} */
@@ -169,6 +180,9 @@ export class HermesHandler {
         this._timeoutMs = timeoutMs;
         this._onUnknown = onUnknown;
         this._onError = onError;
+
+        /** @type {HermesLogger|null} */
+        this._logger = logger;
     }
 
     /**
@@ -271,7 +285,7 @@ export class HermesHandler {
             signal: controller.signal,
             send: (/** @type {any} */payload) => {
                 if (responded) {
-                    console.warn("[Hermes] Multiple send attempts", { type });
+                    this._logger?.warn?.("[Hermes] Multiple send attempts", { type });
                     return;
                 }
 
@@ -308,7 +322,7 @@ export class HermesHandler {
                 ctx.send({ ok: false, error: `Handler ${type} returned no response` });
             }
         } catch (err) {
-            console.error(`[Hermes] Handler error for ${type}:`, err);
+            this._logger?.error?.(`[Hermes] Handler error for ${type}:`, err);
             if (!responded) {
                 ctx.send(this._onError(err, msg, ctx));
             }

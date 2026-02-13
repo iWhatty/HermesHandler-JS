@@ -179,6 +179,46 @@ Dispatch a message manually (useful for testing or non-extension environments).
 
 ---
 
+## Logging
+
+HermesHandler emits warnings and errors through a configurable logger.
+
+By default, it uses the global `console`. You can disable logging entirely or provide a custom logger implementation.
+
+### Disable Logging
+
+```js
+const hermes = new HermesHandler(handlers, {
+  logger: null
+});
+```
+
+### Custom Logger
+
+```js
+const hermes = new HermesHandler(handlers, {
+  logger: {
+    warn: (...args) => myLogger.warn(...args),
+    error: (...args) => myLogger.error(...args)
+  }
+});
+```
+
+**HermesLogger shape**
+
+```ts
+interface HermesLogger {
+  debug?(message?: any, ...optionalParams: any[]): void;
+  info?(message?: any, ...optionalParams: any[]): void;
+  warn?(message?: any, ...optionalParams: any[]): void;
+  error?(message?: any, ...optionalParams: any[]): void;
+}
+```
+
+If `logger` is `null`, HermesHandler will not emit any console output.
+
+---
+
 ## Design Goals
 
 HermesHandler enforces a predictable and deterministic runtime contract. By standardizing request/response handling and isolating message dispatch logic, it simplifies reasoning about complex systems—particularly those involving automation, background scripts, or LLM-driven tool execution.
