@@ -1,0 +1,50 @@
+{
+  "name": "hermes-handler",
+  "version": "0.0.1",
+  "description": "HermesHandler is a lightweight, framework-agnostic message router for browser extensions and event-driven systems, with strict {ok,result,error} envelopes, timeouts, cooperative cancellation, and safe normalization—ideal for reliable LLM agent backbones.",
+  "license": "MIT",
+  "author": "WATT3D",
+  "homepage": "https://github.com/iWhatty/HermesHandler-JS#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iWhatty/HermesHandler-JS.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iWhatty/HermesHandler-JS/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run clean && npm run build:js && npm run build:types",
+    "build:js": "node ./scripts/copy-src-to-dist.mjs",
+    "build:types": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.0.0"
+  },
+  "keywords": []
+}

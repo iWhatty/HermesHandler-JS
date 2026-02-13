@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+
+    "strict": true,
+
+    "allowJs": true,
+    "checkJs": true,
+
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+
+    "outDir": "dist",
+    "rootDir": "src",
+
+    "noEmitOnError": true,
+    "skipLibCheck": true,
+
+    "isolatedModules": false
+  },
+  "include": ["src/**/*.js"],
+  "exclude": ["node_modules", "dist", "test"]
+}
