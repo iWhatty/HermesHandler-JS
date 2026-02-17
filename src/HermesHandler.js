@@ -18,7 +18,7 @@
  * @typedef {Object} HermesErr
  * @property {false} ok
  * @property {string} error
- * @property {any} [details]
+ * @property {any} [info]
  */
 
 
@@ -41,6 +41,7 @@
  * @property {any} sender
  * @property {number|undefined} tabId
  * @property {AbortSignal|undefined} signal
+ * @property {string|undefined} requestId
  * @property {(payload: any) => void} send
  */
 
@@ -68,41 +69,131 @@
  * ---------------------------------------------------------- */
 
 /**
- * @param {any} x
- * @returns {x is Function}
+ * Type guard for callable values.
+ *
+ * @param {unknown} value
+ * @returns {value is (...args: any[]) => any}
  */
-function isFn(x) {
-    return typeof x === "function";
+function isFn(value) {
+    return typeof value === "function";
 }
 
-/** @param {any} err */
+/**
+ * Convert unknown error-like values into a readable string.
+ *
+ * @param {unknown} err
+ * @returns {string}
+ */
 function toErrorString(err) {
-    if (err instanceof Error) return err.message || String(err);
+    if (err instanceof Error) {
+        return err.message || String(err);
+    }
+
+    if (err && typeof err === "object" && "message" in err) {
+        const msg = /** @type {{ message?: unknown }} */ (err).message;
+        if (typeof msg === "string") return msg;
+    }
+
     return String(err);
 }
 
-/** @param {any} payload */
-function normalizePayload(payload) {
-    if (payload && typeof payload === "object" && "ok" in payload) {
-        // Enforce strict boolean ok
-        if (typeof payload.ok !== "boolean") {
-            return { ok: false, error: "Invalid response: 'ok' must be boolean" };
-        }
 
-        // If ok:false, ensure error exists
-        if (payload.ok === false && typeof payload.error !== "string") {
+const HERMES_KEYS = new Set(["ok", "result", "error", "info"]);
+const HERMES_KEYS_SUCCESS = new Set(["ok", "result", "info"]);
+const HERMES_KEYS_ERROR = new Set(["ok", "error", "info"]);
+
+/**
+ * Collect non-canonical fields into an `info` bag.
+ *
+ * @param {any} payload
+ * @param {ReadonlySet<string> | readonly string[]} skipKeys
+ * @returns {Record<string, any> | null}
+ */
+function collectInfo(payload, skipKeys) {
+    const skip = skipKeys instanceof Set ? skipKeys : new Set(skipKeys);
+
+    /** @type {Record<string, any> | null} */
+    let info = null;
+
+    /** @param {string} k @param {any} v */
+    const addInfo = (k, v) => {
+        if (v === undefined) return;
+        if (info === null) info = {};
+        info[k] = v;
+    };
+
+    if ("info" in payload) addInfo("handlerInfo", payload.info);
+
+    for (const [k, v] of Object.entries(payload)) {
+        if (skip.has(k)) continue;
+        addInfo(k, v);
+    }
+
+    return info;
+}
+
+
+/**
+ * Normalize any handler return value into a HermesResponse.
+ *
+ * Goals:
+ *  - Always return a deterministic envelope: {ok:true,result?} or {ok:false,error,info?}
+ *  - Never silently drop useful info: preserve conflicting/extra fields in info and warn
+ *
+ * @param {any} payload
+ * @param {HermesLogger|null} logger
+ * @returns {{ ok: true, result?: any, info?: any } | { ok: false, error: string, info?: any }}
+ */
+function normalizePayload(payload, logger = null) {
+    if (!payload || typeof payload !== "object" || !("ok" in payload)) {
+        return { ok: true, result: payload };
+    }
+
+    if (typeof payload.ok !== "boolean") {
+        return { ok: false, error: "Invalid response: 'ok' must be boolean" };
+    }
+
+    if (payload.ok === false) {
+        if (typeof payload.error !== "string") {
             return { ok: false, error: "Invalid response: missing 'error' string" };
         }
 
-        return payload;
+        // Extras include accidental result + any unexpected keys + handlerInfo
+        const info = collectInfo(payload, HERMES_KEYS_ERROR) /* includes result + others */;
+
+        if (info) {
+            logger?.warn?.("[Hermes] ok:false response contained extra fields; preserved in info", {
+                extraKeys: Object.keys(info)
+            });
+            return { ok: false, error: payload.error, info };
+        }
+
+        return { ok: false, error: payload.error };
     }
 
-    return { ok: true, result: payload };
+    /** @type {{ ok: true, result?: any, info?: any }} */
+    const out = { ok: true };
+    if ("result" in payload) out.result = payload.result;
+
+    // Extras include accidental error + any unexpected keys + handlerInfo
+    const info = collectInfo(payload, HERMES_KEYS_SUCCESS) /* includes error + others */;
+
+    if (info) {
+        logger?.warn?.("[Hermes] ok:true response contained extra fields; preserved in info", {
+            extraKeys: Object.keys(info)
+        });
+        out.info = info;
+    }
+
+    return out;
 }
 
-/** @param {any} payload */
-function freezeNormalized(payload) {
-    const normalized = normalizePayload(payload);
+/**
+ * @param {any} payload
+ * @param {HermesLogger|null} logger
+ */
+function freezeNormalized(payload, logger = null) {
+    const normalized = normalizePayload(payload, logger);
     return normalized && typeof normalized === "object"
         ? Object.freeze(normalized)
         : normalized;
@@ -170,7 +261,7 @@ export class HermesHandler {
     constructor(initialHandlers = {}, options = {}) {
         const {
             timeoutMs = 5000,
-            onUnknown = (msg) => ({ ok: false, error: `Unknown msg.type: ${msg?.type}` }),
+            onUnknown = (msg, _ctx) => ({ ok: false, error: `Unknown msg.type: ${msg?.type}` }),
             onError = (err) => ({ ok: false, error: toErrorString(err) }),
             logger = console
         } = options;
@@ -184,6 +275,20 @@ export class HermesHandler {
         /** @type {HermesLogger|null} */
         this._logger = logger;
     }
+
+
+    /**
+     * Get a list of currently registered message types.
+     *
+     * The returned array reflects registration order (Map insertion order).
+     * Useful for debugging, diagnostics, or validating integration boundaries.
+     *
+     * @returns {string[]} Array of registered message type strings.
+     */
+    types() {
+        return [...this._handlers.keys()];
+    }
+
 
     /**
      * Register (or overwrite) a handler for a given msg.type
@@ -237,11 +342,20 @@ export class HermesHandler {
 
             // Callback-style (works everywhere)
             if (isFn(sendResponse)) {
+
                 p.then(sendResponse).catch((err) =>
-                    sendResponse(freezeNormalized(this._onError(err, msg, { sender })))
+                    sendResponse(
+                        freezeNormalized(
+                            this._onError(err, msg, { sender, tabId: sender?.tab?.id }),
+                            this._logger
+                        )
+                    )
                 );
+
                 return true; // keep the port open for async response
             }
+
+
 
 
             // Promise-returning style
@@ -258,13 +372,13 @@ export class HermesHandler {
     async _dispatch(msg, sender) {
 
         if (!msg || typeof msg !== "object") {
-            return freezeNormalized({ ok: false, error: "Invalid message: msg expected to be an object" });
+            return freezeNormalized({ ok: false, error: "Invalid message: msg expected to be an object" }, this._logger);
         }
 
         const type = msg.type;
 
         if (typeof type !== "string" || !type) {
-            return freezeNormalized({ ok: false, error: "Invalid message: msg missing string 'type'" });
+            return freezeNormalized({ ok: false, error: "Invalid message: msg missing string 'type'" }, this._logger);
         }
 
 
@@ -272,7 +386,8 @@ export class HermesHandler {
         let responded = false;
 
         /** @type {HermesResponse<any>} */
-        let payloadToReturn = freezeNormalized({ ok: false, error: "No response" });
+        let payloadToReturn = freezeNormalized({ ok: false, error: "No response" }, this._logger);
+
 
         // Cooperative cancellation: handlers MAY honor ctx.signal
         const controller = typeof AbortController !== "undefined"
@@ -283,6 +398,7 @@ export class HermesHandler {
             sender,
             tabId: sender?.tab?.id,
             signal: controller.signal,
+            requestId: msg?.requestId,
             send: (/** @type {any} */payload) => {
                 if (responded) {
                     this._logger?.warn?.("[Hermes] Multiple send attempts", { type });
@@ -293,7 +409,7 @@ export class HermesHandler {
 
                 // Freeze to prevent accidental mutation after responding
                 // (shallow freeze is enough and avoids surprising perf hits).
-                payloadToReturn = freezeNormalized(payload);
+                payloadToReturn = freezeNormalized(payload, this._logger);
 
             }
 

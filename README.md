@@ -1,6 +1,6 @@
 # HermesHandler
 
-HermesHandler is a lightweight, framework-agnostic message router for browser extensions and event-driven systems. It provides structured request dispatching, a strict `{ ok, result, error }` response envelope, timeout handling, cooperative cancellation, and safe normalization.
+HermesHandler is a lightweight, framework-agnostic message router for browser extensions and event-driven systems. It provides structured request dispatching, a strict `{ ok:true, result?, info? } | { ok:false, error, info? }` response envelope, timeout handling, cooperative cancellation, and safe normalization.
 
 Designed for reliability and clarity, HermesHandler is especially well-suited for LLM-driven agents, modular browser architectures, automation layers, and distributed runtime systems.
 
@@ -9,7 +9,7 @@ Designed for reliability and clarity, HermesHandler is especially well-suited fo
 ## ✨ Features
 
 * 🔁 Deterministic message routing via `type`
-* 📦 Strict response envelope: `{ ok, result?, error? }`
+* 📦 Strict response envelope: { ok:true, result? } | { ok:false, error, info? }
 * ⏱ Built-in timeout handling
 * 🛑 Cooperative cancellation via `AbortSignal`
 * 🧊 Immutable (shallow-frozen) responses
@@ -71,17 +71,20 @@ HermesHandler supports both:
 ## Response Contract
 
 All responses follow a strict envelope.
+If a handler returns inconsistent envelopes (e.g. { ok:false, error, result }), Hermes warns and preserves extras under info.
+
+If a handler returns an envelope that already includes info, Hermes preserves it under info.handlerInfo when additional fields must also be recorded.
 
 ### Success
 
 ```js
-{ ok: true, result: any }
+{ ok: true, result: any, info?: any }
 ```
 
 ### Error
 
 ```js
-{ ok: false, error: string, details?: any }
+{ ok: false, error: string, info?: any }
 ```
 
 Primitive return values are automatically normalized:
@@ -96,7 +99,7 @@ Becomes:
 { ok: true, result: "hello" }
 ```
 
-Malformed responses are safely coerced into valid error envelopes.
+Malformed envelopes are safely coerced into valid error envelopes.
 
 ---
 
@@ -177,6 +180,10 @@ Returns a runtime-compatible message listener.
 ### `.dispatch(msg, sender?)`
 
 Dispatch a message manually (useful for testing or non-extension environments).
+
+### `.types()`
+
+List registered message types (registration order).
 
 ---
 
