@@ -1,6 +1,7 @@
 # HermesHandler
 
-HermesHandler is a lightweight, framework-agnostic message router for browser extensions and event-driven systems. It provides structured request dispatching, a strict `{ ok:true, result?, info? } | { ok:false, error, info? }` response envelope, timeout handling, cooperative cancellation, and safe normalization.
+HermesHandler is a lightweight, framework-agnostic message router for browser extensions and event-driven systems. It provides structured request dispatching with a strict response envelope
+{ ok:true, result?, info? } | { ok:false, error, info? }, built-in timeout handling, cooperative cancellation, and safe normalization.
 
 Designed for reliability and clarity, HermesHandler is especially well-suited for LLM-driven agents, modular browser architectures, automation layers, and distributed runtime systems.
 
@@ -9,7 +10,7 @@ Designed for reliability and clarity, HermesHandler is especially well-suited fo
 ## ✨ Features
 
 * 🔁 Deterministic message routing via `type`
-* 📦 Strict response envelope: { ok:true, result? } | { ok:false, error, info? }
+* 📦 Strict response envelope: { ok:true, result?, info? } | { ok:false, error, info? }
 * ⏱ Built-in timeout handling
 * 🛑 Cooperative cancellation via `AbortSignal`
 * 🧊 Immutable (shallow-frozen) responses
@@ -71,6 +72,9 @@ HermesHandler supports both:
 ## Response Contract
 
 All responses follow a strict envelope.
+
+Hermes never mutates result; any unexpected or conflicting fields are preserved under info.
+
 If a handler returns inconsistent envelopes (e.g. { ok:false, error, result }), Hermes warns and preserves extras under info.
 
 If a handler returns an envelope that already includes info, Hermes preserves it under info.handlerInfo when additional fields must also be recorded.
@@ -99,7 +103,7 @@ Becomes:
 { ok: true, result: "hello" }
 ```
 
-Malformed envelopes are safely coerced into valid error envelopes.
+Malformed envelopes are coerced into valid error responses.
 
 ---
 
