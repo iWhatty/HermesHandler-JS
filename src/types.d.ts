@@ -64,6 +64,14 @@ export type HermesContext = {
     signal: AbortSignal | undefined;
     requestId: string | undefined;
     send: (payload: unknown) => void;
+    /**
+     * Declare Transferables inside the response that should MOVE to the
+     * caller instead of being structured-cloned. Honored by
+     * transfer-capable serving glue (`servePostMessage`); readable via
+     * `getTransferList(envelope)` for hand-rolled transports. Cumulative
+     * across calls within one dispatch.
+     */
+    transfer: (...transferables: Transferable[]) => void;
 };
 
 // ============================================================================
@@ -185,10 +193,16 @@ export type HermesClientRequest<R, K extends string = string> = {
     payload?: R;
     timeoutMs?: number;
     signal?: AbortSignal;
+    /**
+     * Transferables inside `payload` to move rather than clone. Forwarded
+     * as the transport's second `send` argument; transports over channels
+     * that can't transfer ignore it.
+     */
+    transfer?: Transferable[];
 };
 
 export type HermesClientTransport = {
-    send: (msg: { type: string; payload?: unknown; requestId: string }) => void;
+    send: (msg: { type: string; payload?: unknown; requestId: string }, transfer?: Transferable[]) => void;
     subscribe: (handler: (msg: unknown) => void) => () => void;
 };
 
@@ -223,3 +237,24 @@ export function createHermesClient<
 
 /** Convenience: derive a HermesClient type from a HermesHandler instance. */
 export type ClientOf<H> = H extends HermesHandler<infer M> ? HermesClient<Routes<M>> : never;
+
+// ============================================================================
+// Transferables (zero-copy postMessage payloads)
+// ============================================================================
+
+/**
+ * Read the transfer list registered for a response envelope (via
+ * `ctx.transfer(...)` in a handler). Returns `[]` when none was
+ * registered, so the result can be passed straight to
+ * `postMessage(msg, transfer)`. For hand-rolled serving glue;
+ * `servePostMessage` calls this internally.
+ */
+export function getTransferList(envelope: object): Transferable[];
+
+/**
+ * Associate a transfer list with a response envelope. Exposed for
+ * dispatch-shaped stand-ins that produce envelopes outside
+ * HermesHandler; the router itself registers `ctx.transfer(...)`
+ * collections automatically.
+ */
+export function setTransferList(envelope: object, transferables: Transferable[]): void;

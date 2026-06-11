@@ -1,6 +1,6 @@
 {
   "name": "hermes-handler",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "HermesHandler is a lightweight, framework-agnostic message router for browser extensions and event-driven systems, with strict {ok,result,error} envelopes, timeouts, cooperative cancellation, and safe normalization. Ideal for reliable LLM agent backbones.",
   "license": "SEE LICENSE IN LICENSE",
   "author": "WATT3D <WATT3D@protonmail.com>",

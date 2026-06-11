@@ -13,6 +13,7 @@
 import { normalizePayload, freezeNormalized } from "./internal/envelope.js";
 import { withTimeout } from "./internal/timeout.js";
 import { toErrorString } from "./internal/errors.js";
+import { setTransferList } from "./internal/transfer.js";
 
 
 /**
@@ -52,6 +53,13 @@ import { toErrorString } from "./internal/errors.js";
  * @property {AbortSignal|undefined} signal
  * @property {string|undefined} requestId
  * @property {(payload: any) => void} send
+ * @property {(...transferables: Transferable[]) => void} transfer
+ *   Declare Transferables inside the response (ArrayBuffers, MessagePorts,
+ *   ImageBitmaps, ...) that should MOVE to the caller instead of being
+ *   structured-cloned. Honored by transfer-capable serving glue
+ *   (`servePostMessage`); read via `getTransferList(envelope)` for
+ *   hand-rolled transports; harmless elsewhere. Cumulative across calls
+ *   within one dispatch.
  */
 
 
@@ -369,6 +377,9 @@ export class HermesHandler {
             ? new AbortController()
             : { signal: undefined, abort: () => { } };
 
+        /** @type {Transferable[]} */
+        const transferables = [];
+
         const ctx = {
             sender,
             tabId: sender?.tab?.id,
@@ -386,6 +397,15 @@ export class HermesHandler {
                 // (shallow freeze is enough and avoids surprising perf hits).
                 payloadToReturn = freezeNormalized(payload, this._logger, reqId);
 
+            },
+            // Collect Transferables for the response. The list rides
+            // OUTSIDE the (frozen) envelope in a WeakMap — see
+            // internal/transfer.js — and is registered against the final
+            // envelope just before _dispatch returns.
+            transfer: (/** @type {Transferable[]} */ ...items) => {
+                for (const item of items) {
+                    if (item != null) transferables.push(item);
+                }
             }
 
         };
@@ -459,6 +479,14 @@ export class HermesHandler {
         } finally {
             // NOTE: Abort does not stop JS execution, but lets handlers cooperate.
             controller.abort();
+        }
+
+        // Associate collected Transferables with the final envelope so
+        // serving glue can pass them to postMessage. Error envelopes get
+        // them too: if the handler transferred before throwing, the
+        // buffers are spoken for either way.
+        if (transferables.length > 0) {
+            setTransferList(payloadToReturn, transferables);
         }
 
         return payloadToReturn;

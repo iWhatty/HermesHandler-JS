@@ -19,6 +19,7 @@ Lightweight, framework-agnostic message router for browser extensions and event-
 - Framework-agnostic (no runtime dependencies)
 - Type-safe via generated `.d.ts`
 - Tiny client-side helper via `hermes-handler/client` subpath (≈ 1 KB minified). Speaks the same wire envelope without bringing the router class into size-sensitive bundles.
+- Zero-copy worker RPC: `transfer` on requests, `ctx.transfer(...)` on responses, and `servePostMessage(hermes, self)` to serve a router from a Web Worker — Transferables move instead of being structured-cloned.
 
 ---
 
@@ -251,6 +252,63 @@ else        console.warn(res.error, res.info);
 ```
 
 `createHermesClient` handles `requestId` correlation, per-call timeout, `AbortSignal`, and envelope normalization. The wire shape is the contract; the client is one implementation of it. Half-and-half is fine and often correct.
+
+### Workers + zero-copy transferables
+
+The classic worker-RPC pattern — main thread sends a large binary payload
+(ImageData, audio buffer, ArrayBuffer), worker computes, sends a large
+result back — needs **Transferables** to avoid structured-cloning
+megabytes in both directions. Three pieces cover it end to end:
+
+```js
+// ---- worker.js (module worker) ----
+import { HermesHandler } from "hermes-handler";
+import { servePostMessage } from "hermes-handler/transports/postmessage";
+
+const hermes = new HermesHandler({
+  invert: { timeoutMs: 0, handler: (msg, ctx) => {   // 0 = no budget; heavy compute
+    const out = invertPixels(msg.payload);            // { width, height, data: ArrayBuffer }
+    ctx.transfer(out.data);                           // MOVE the buffer back, don't clone
+    return { ok: true, result: out };
+  } },
+});
+servePostMessage(hermes, self);
+
+// ---- main.js ----
+import { createHermesClient } from "hermes-handler/client";
+import { postMessageTransport } from "hermes-handler/transports/postmessage";
+
+const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+const dispatch = createHermesClient(postMessageTransport(worker));
+
+const buf = imageData.data.slice().buffer;            // copy once, then MOVE
+const res = await dispatch({
+  type: "invert",
+  payload: { width, height, data: buf },
+  transfer: [buf],                                    // request buffer moves to the worker
+  timeoutMs: 0,
+});
+```
+
+Mechanics:
+
+- **Requests**: `dispatch({ ..., transfer: [...] })` forwards the list as
+  the transport's second `send` argument. After the send, transferred
+  buffers are neutered on the sending side — copy first if you still need
+  them (the snippet's `.slice()`).
+- **Responses**: handlers call `ctx.transfer(...)`; the list rides
+  *outside* the frozen envelope (WeakMap keyed by envelope identity, so
+  the wire payload is byte-identical for consumers that ignore it).
+  `servePostMessage` reads it automatically; hand-rolled glue can use
+  `getTransferList(envelope)` from the root export.
+- **Transports that can't transfer** (`chrome-runtime`,
+  `broadcast-channel`) ignore the list — payloads still arrive, via
+  copy. No behavioural fork in your code.
+
+`servePostMessage(hermes, endpoint, opts?)` is the router-side mirror of
+`postMessageTransport`: same `inbound`/`outbound` discriminators, same
+`filter`, plus fire-and-forget semantics for messages without a
+`requestId`. It returns an unsubscribe function.
 
 ### Timeouts
 

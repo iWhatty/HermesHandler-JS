@@ -33,4 +33,6 @@ export {
     CreateHermesClientOptions,
     createHermesClient,
     ClientOf,
+    getTransferList,
+    setTransferList,
 } from "./types.js";

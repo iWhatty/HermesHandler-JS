@@ -1,6 +1,7 @@
 // src/index.js
 
 export { HermesHandler } from "./HermesHandler.js";
+export { getTransferList, setTransferList } from "./internal/transfer.js";
 
 /**
  * Public type exports (JSDoc re-exports).

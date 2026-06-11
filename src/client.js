@@ -34,6 +34,13 @@ import { parseWireResponse } from "./internal/wire.js";
  * @property {any} [payload]
  * @property {number} [timeoutMs]  Per-call override of the client default. 0 disables.
  * @property {AbortSignal} [signal]
+ * @property {Transferable[]} [transfer]
+ *   Transferable objects inside `payload` (ArrayBuffers, MessagePorts,
+ *   ImageBitmaps, ...) to move rather than structured-clone. Forwarded as
+ *   the transport's second `send` argument. Transports over channels that
+ *   can't transfer (chrome.runtime, BroadcastChannel) ignore it — the
+ *   payload still arrives, via copy. After a transferring send, the
+ *   buffers are neutered on the sending side; don't reuse them.
  */
 
 /**
@@ -50,9 +57,11 @@ import { parseWireResponse } from "./internal/wire.js";
 
 /**
  * @typedef {Object} CreateHermesClientOptions
- * @property {(msg: any) => void} send
+ * @property {(msg: any, transfer?: Transferable[]) => void} send
  *   Called once per dispatch. Fire-and-forget; replies arrive via `subscribe`.
  *   Throwing here resolves the dispatch with an error envelope (does not throw).
+ *   The second argument carries the request's transfer list when one was
+ *   provided; transports that can't transfer may ignore it.
  * @property {(handler: (msg: any) => void) => () => void} subscribe
  *   Subscribe to incoming messages from the server. Called ONCE at client
  *   construction; the client routes messages internally (by `requestId` for
@@ -129,7 +138,7 @@ export function createHermesClient({ send, subscribe, defaultTimeoutMs = 5000, i
      * @returns {Promise<HermesClientResponse<any>>}
      */
     function dispatch(req) {
-        const { type, payload, timeoutMs, signal } = req || /** @type {HermesClientRequest} */ ({});
+        const { type, payload, timeoutMs, signal, transfer } = req || /** @type {HermesClientRequest} */ ({});
 
         if (typeof type !== "string" || type.length === 0) {
             return Promise.resolve(/** @type {HermesClientResponse<any>} */ ({
@@ -187,7 +196,7 @@ export function createHermesClient({ send, subscribe, defaultTimeoutMs = 5000, i
             }
 
             try {
-                send({ type, payload, requestId });
+                send({ type, payload, requestId }, transfer);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 settle({

@@ -9,10 +9,13 @@
 
 /**
  * @typedef {Object} HermesTransport
- * @property {(msg: any) => void} send
+ * @property {(msg: any, transfer?: Transferable[]) => void} send
  *   Called once per dispatch. Fire-and-forget; replies arrive via
  *   subscribe. May throw on transport unavailability — the client
- *   converts those to error envelopes.
+ *   converts those to error envelopes. The optional second argument is
+ *   the request's transfer list; adapters over channels that support
+ *   transfer (postMessage) forward it, others ignore it (the payload
+ *   still arrives, via structured clone / serialization).
  * @property {(handler: (msg: any) => void) => () => void} subscribe
  *   Subscribe to incoming messages. Called ONCE at client construction.
  *   Must return an unsubscribe function invoked on `.close()`.

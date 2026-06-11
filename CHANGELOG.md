@@ -2,6 +2,12 @@
 
 > Initial cut seeded from `git log` by the host repo's `tools/seed-changelogs.mjs` script. Version groupings infer release boundaries from tags and commit subjects; rough cuts are expected — review and tighten as part of normal maintenance.
 
+## 1.1.0 — 2026-06-11 (unpublished; awaiting release approval)
+
+- feat: zero-copy Transferables, both directions. `dispatch({ transfer })` forwards a transfer list as the transport's second `send` argument; handlers declare response transferables via `ctx.transfer(...)`, carried outside the frozen envelope in a WeakMap (`getTransferList` / `setTransferList` exported from the root).
+- feat: `servePostMessage(hermes, endpoint, opts?)` — router-side mirror of `postMessageTransport`. Serves a HermesHandler from a Web Worker, MessagePort, or Window; honors `ctx.transfer` lists; fire-and-forget for messages without a `requestId`; same inbound/outbound discriminators.
+- Backward compatible: wire shape unchanged; existing transports ignore the new optional `send` argument.
+
 ## Unreleased — 2026-05-21
 
 - test: silence expected timeout logs  `9e7d4eb`
