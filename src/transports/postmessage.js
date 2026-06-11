@@ -89,8 +89,11 @@ export function postMessageTransport(target, opts = {}) {
         /** @param {any} event */
         const listener = (event) => {
             // For same-window page↔content bridges, require event.source ===
-            // target so we don't pick up our own outbound messages.
-            if (event.source !== undefined && event.source !== target && event.source !== globalThis) return;
+            // target so we don't pick up our own outbound messages. Messages
+            // from Workers and MessagePorts arrive with source === null (per
+            // spec — there's no WindowProxy to attribute them to), so a null
+            // source must pass: it can never be same-window echo.
+            if (event.source != null && event.source !== target && event.source !== globalThis) return;
             const data = event.data;
             if (!data || typeof data !== "object") return;
             for (const k of inboundKeys) {

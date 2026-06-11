@@ -87,6 +87,29 @@ describe("client request transfer", () => {
     });
 });
 
+describe("postMessageTransport worker-shaped events", () => {
+    it("accepts replies with event.source === null (real Worker/MessagePort behaviour)", async () => {
+        // Real MessageEvents from Workers carry source: null (no WindowProxy),
+        // not source: undefined. The same-window echo guard must let them
+        // through — regression test for the guard treating null as foreign.
+        const listeners = new Set();
+        const target = {
+            postMessage(msg) {
+                queueMicrotask(() => {
+                    for (const l of listeners) l({ data: { ok: true, result: "pong", requestId: msg.requestId }, source: null });
+                });
+            },
+            addEventListener(_t, l) { listeners.add(l); },
+            removeEventListener(_t, l) { listeners.delete(l); },
+        };
+        const dispatch = createHermesClient(postMessageTransport(target));
+
+        const res = await dispatch({ type: "ping", timeoutMs: 500 });
+
+        expect(res).toEqual({ ok: true, result: "pong" });
+    });
+});
+
 describe("postMessageTransport transfer forwarding", () => {
     it("passes the transfer list to a port-style target", () => {
         const [port] = endpointPair();
