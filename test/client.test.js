@@ -247,6 +247,49 @@ describe("createHermesClient", () => {
         expect(seen).toEqual(["custom-1000", "custom-1001"]);
     });
 
+    it("fails safely when idGen returns an invalid requestId", async () => {
+        const send = vi.fn();
+        const dispatch = createHermesClient({
+            send,
+            subscribe: () => () => {},
+            idGen: () => "",
+        });
+
+        await expect(dispatch({ type: "echo" })).resolves.toEqual({
+            ok: false,
+            error: "Hermes client: idGen must return a non-empty string",
+            info: { type: "echo" },
+        });
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it("does not overwrite a pending dispatch when idGen returns a duplicate ID", async () => {
+        const subscribers = new Set();
+        const send = vi.fn();
+        const dispatch = createHermesClient({
+            send,
+            subscribe: (handler) => {
+                subscribers.add(handler);
+                return () => subscribers.delete(handler);
+            },
+            idGen: () => "same-id",
+            defaultTimeoutMs: 0,
+        });
+
+        const first = dispatch({ type: "first" });
+        const second = await dispatch({ type: "second" });
+
+        expect(second).toEqual({
+            ok: false,
+            error: "Hermes client: duplicate requestId",
+            info: { requestId: "same-id", type: "second" },
+        });
+        expect(send).toHaveBeenCalledTimes(1);
+
+        for (const handler of subscribers) handler({ ok: true, result: "first", requestId: "same-id" });
+        await expect(first).resolves.toEqual({ ok: true, result: "first" });
+    });
+
     it("throws synchronously on factory misuse", () => {
         expect(() => createHermesClient({ subscribe: () => () => { } })).toThrow(/send/);
         expect(() => createHermesClient({ send: () => { } })).toThrow(/subscribe/);
@@ -400,15 +443,53 @@ describe("createHermesClient", () => {
             expect(seen).toEqual([{ tick: 1 }, { tick: 2 }]);
         });
 
-        it(".close() unsubscribes from the transport", () => {
-            let unsubscribed = false;
+        it(".close() unsubscribes from the transport only once", () => {
+            let unsubscribeCalls = 0;
             const transport = {
                 send: () => {},
-                subscribe: () => () => { unsubscribed = true; },
+                subscribe: () => () => { unsubscribeCalls += 1; },
             };
             const dispatch = createHermesClient(transport);
             dispatch.close();
-            expect(unsubscribed).toBe(true);
+            dispatch.close();
+            expect(unsubscribeCalls).toBe(1);
+        });
+
+        it(".close() settles timeout-disabled dispatches and blocks future sends", async () => {
+            const send = vi.fn();
+            const dispatch = createHermesClient({
+                send,
+                subscribe: () => () => {},
+                defaultTimeoutMs: 0,
+            });
+
+            const pending = dispatch({ type: "hang" });
+            dispatch.close();
+
+            await expect(pending).resolves.toEqual({
+                ok: false,
+                error: "Hermes client: client is closed",
+                info: expect.objectContaining({ closed: true, type: "hang" }),
+            });
+            await expect(dispatch({ type: "after-close" })).resolves.toEqual({
+                ok: false,
+                error: "Hermes client: client is closed",
+                info: { closed: true },
+            });
+            expect(send).toHaveBeenCalledTimes(1);
+        });
+
+        it(".on() is a no-op after close while preserving its unsubscribe contract", () => {
+            const transport = makeFanout();
+            const dispatch = createHermesClient(transport);
+            const seen = [];
+
+            dispatch.close();
+            const off = dispatch.on("evt", (payload) => seen.push(payload));
+            transport.emit({ type: "evt", payload: 1 });
+            off();
+
+            expect(seen).toEqual([]);
         });
 
         it(".on() rejects malformed args", () => {

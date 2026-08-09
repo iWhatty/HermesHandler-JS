@@ -49,14 +49,23 @@ export function chromeRuntimeTransport(opts = {}) {
     /** @type {((msg: any) => void) | null} */
     let attachedListener = null;
 
+    /** @param {any} msg */
+    const fanout = (msg) => {
+        for (const h of handlers) h(msg);
+    };
+
     const ensureListener = () => {
         if (listenerAttached) return;
-        /** @param {any} msg */
-        attachedListener = (msg) => {
-            for (const h of handlers) h(msg);
-        };
+        attachedListener = fanout;
         r.runtime.onMessage.addListener(attachedListener);
         listenerAttached = true;
+    };
+
+    const detachListenerIfUnused = () => {
+        if (!listenerAttached || handlers.size > 0) return;
+        r.runtime.onMessage.removeListener(attachedListener);
+        attachedListener = null;
+        listenerAttached = false;
     };
 
     /** @param {any} msg */
@@ -68,17 +77,32 @@ export function chromeRuntimeTransport(opts = {}) {
         /** @param {any} responseOrUndef */
         const apply = (responseOrUndef) => {
             if (responseOrUndef === undefined) return;
-            for (const h of handlers) h(responseOrUndef);
+            fanout(responseOrUndef);
+        };
+        /** @param {unknown} err */
+        const applyFailure = (err) => {
+            // The client can correlate only requests that supplied an id.
+            // Raw adapter sends without one should remain fire-and-forget.
+            if (typeof msg?.requestId !== "string" || msg.requestId.length === 0) return;
+            const message = err instanceof Error ? err.message : String(err);
+            fanout({
+                ok: false,
+                error: `Hermes client: send failed (${message})`,
+                info: { requestId: msg.requestId, type: msg.type },
+                requestId: msg.requestId,
+            });
         };
         try {
             const p = (tabId !== undefined && r.tabs && typeof r.tabs.sendMessage === "function")
                 ? r.tabs.sendMessage(tabId, msg)
                 : r.runtime.sendMessage(msg);
             if (p && typeof p.then === "function") {
-                p.then(apply).catch(() => { /* swallow — client times out */ });
+                // Keep a subscriber exception from being misreported as a
+                // runtime send failure while still avoiding an unhandled chain.
+                p.then(apply, applyFailure).catch(() => {});
             }
-        } catch {
-            // Runtime may be unavailable mid-reload; the client times out.
+        } catch (err) {
+            applyFailure(err);
         }
     };
 
@@ -86,7 +110,13 @@ export function chromeRuntimeTransport(opts = {}) {
     const subscribe = (handler) => {
         handlers.add(handler);
         ensureListener();
-        return () => handlers.delete(handler);
+        let subscribed = true;
+        return () => {
+            if (!subscribed) return;
+            subscribed = false;
+            handlers.delete(handler);
+            detachListenerIfUnused();
+        };
     };
 
     return defineTransport("chromeRuntimeTransport", { send, subscribe });

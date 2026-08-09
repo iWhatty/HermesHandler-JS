@@ -111,6 +111,9 @@ export function postMessageTransport(target, opts = {}) {
             }
         };
         target.addEventListener("message", listener);
+        // MessagePort only begins dispatching addEventListener listeners after
+        // start(). Window and Worker-style endpoints do not expose it.
+        if (typeof target.start === "function") target.start();
         return () => target.removeEventListener("message", listener);
     };
 
@@ -235,5 +238,8 @@ export function servePostMessage(hermes, endpoint, opts = {}) {
     };
 
     endpoint.addEventListener("message", listener);
+    // See postMessageTransport.subscribe(): real MessagePorts need explicit
+    // activation when their listeners were registered with addEventListener.
+    if (typeof endpoint.start === "function") endpoint.start();
     return () => endpoint.removeEventListener("message", listener);
 }

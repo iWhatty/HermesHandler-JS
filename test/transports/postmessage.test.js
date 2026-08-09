@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { postMessageTransport } from "../../src/transports/postmessage.js";
+import { MessageChannel } from "node:worker_threads";
+import { postMessageTransport, servePostMessage } from "../../src/transports/postmessage.js";
 import { createHermesClient } from "../../src/client.js";
 import { HermesHandler } from "../../src/HermesHandler.js";
 
@@ -21,6 +22,36 @@ function makeFakePort() {
 }
 
 describe("postMessageTransport", () => {
+    it("activates real MessagePort endpoints for a full client/server round-trip", async () => {
+        const { port1: serverPort, port2: clientPort } = new MessageChannel();
+        const originalServerStart = serverPort.start.bind(serverPort);
+        const originalClientStart = clientPort.start.bind(clientPort);
+        let serverStartCalls = 0;
+        let clientStartCalls = 0;
+        serverPort.start = () => {
+            serverStartCalls += 1;
+            return originalServerStart();
+        };
+        clientPort.start = () => {
+            clientStartCalls += 1;
+            return originalClientStart();
+        };
+
+        const hermes = new HermesHandler({ ping: () => "pong" }, { logger: null });
+        const stop = servePostMessage(hermes, serverPort);
+        const dispatch = createHermesClient(postMessageTransport(clientPort));
+
+        try {
+            await expect(dispatch({ type: "ping" })).resolves.toEqual({ ok: true, result: "pong" });
+            expect(serverStartCalls).toBe(1);
+            expect(clientStartCalls).toBe(1);
+        } finally {
+            stop();
+            serverPort.close();
+            clientPort.close();
+        }
+    });
+
     it("integrates with createHermesClient + HermesHandler over a fake port pair", async () => {
         const clientPort = makeFakePort();
         const serverPort = makeFakePort();

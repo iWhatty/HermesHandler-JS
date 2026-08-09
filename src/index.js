@@ -1,6 +1,7 @@
 // src/index.js
 
 export { HermesHandler } from "./HermesHandler.js";
+export { createHermesClient } from "./client.js";
 export { getTransferList, setTransferList } from "./internal/transfer.js";
 
 /**

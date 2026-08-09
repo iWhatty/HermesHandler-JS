@@ -12,7 +12,7 @@ import {
     type HermesResponse,
     type HermesClient,
     type Routes,
-} from "../src/types.js";
+} from "../src/index.js";
 
 // ============================================================================
 // Handler map shape inference

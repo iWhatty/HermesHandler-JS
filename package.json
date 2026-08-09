@@ -53,12 +53,13 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "pnpm run clean && pnpm run build:js && pnpm run build:types",
-    "build:js": "mkdir -p dist && cp -R src/. dist/",
+    "build:js": "node scripts/copy-source.mjs",
     "build:types": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "vitest run && pnpm run test:types",
+    "test": "vitest run && pnpm run test:types && pnpm run test:package",
     "test:types": "tsc -p tsconfig.test-types.json",
-    "prepublishOnly": "pnpm run build && pnpm test"
+    "test:package": "pnpm run build && node scripts/check-package-exports.mjs",
+    "prepublishOnly": "pnpm test"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
